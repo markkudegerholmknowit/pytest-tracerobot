@@ -170,3 +170,16 @@ def test_lobby_register_twice(gameLobbyFixture):
 def test_lobby_register_unregister(gameLobbyFixture):
     assert gameLobbyFixture.try_register()
     assert gameLobbyFixture.try_unregister()
+
+
+@pytest.fixture
+def nopFixture():
+    rlog("setup")
+    yield
+    rlog("teardown")
+
+
+@pytest.mark.nop
+def test_nop(nopFixture):
+    rlog("nop!")
+    raise AssertionError("foo")

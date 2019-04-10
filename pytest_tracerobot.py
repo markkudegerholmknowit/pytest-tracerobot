@@ -2,6 +2,7 @@ import os
 import pytest
 import tracerobot
 
+HOOK_DEBUG=True
 
 def common_items(iter1, iter2):
     common = []
@@ -68,13 +69,42 @@ class TraceRobotPlugin:
 
         assert self.current_path == target
 
-    def pytest_runtest_call(self, item):
-        markers = [marker.name for marker in item.iter_markers()]
+    # Reporting hooks
 
-        # TODO: Store in plugin instead of test object?
-        item.rt_test_info = tracerobot.start_test(
-            name=item.name,
-            tags=markers)
+    @pytest.hookimpl(hookwrapper=True)
+    def pytest_fixture_setup(self, fixturedef, request):
+
+        scope = fixturedef.scope    # 'function', 'class', 'module', 'session'
+
+        if HOOK_DEBUG:
+            print("pytest_fixture_setup", fixturedef, request, request.node);
+
+        if scope == 'function':
+            item = request.node
+            markers = [marker.name for marker in item.iter_markers()]
+
+            print("handle_per_function_fixture start_test")
+            test = tracerobot.start_test(
+                name=item.name,
+                tags=markers)
+            tracerobot.set_test_phase("setup")
+            item.rt_test_info = test
+
+            yield
+        else:
+            fixture = tracerobot.start_keyword(
+                name=fixturedef.argname
+            )
+
+            # TODO: This might raise, handle it?
+            outcome = yield
+
+            result = outcome.get_result()
+            tracerobot.end_keyword(fixture, result)
+
+
+    def pytest_runtest_call(self, item):
+        pass
 
     @pytest.hookimpl(hookwrapper=True)
     def pytest_runtest_teardown(self, item, nextitem):
@@ -94,30 +124,55 @@ class TraceRobotPlugin:
         yield
 
     def pytest_runtest_makereport(self, item, call):
-        if not call.when == 'call':
-            return
 
-        if call.excinfo:
-            error_msg = call.excinfo.exconly()
-        else:
-            error_msg = None
+        #call.when: (post)"setup", (post)"call", (post)"teardown"
+        #note: setup and teardown are called even if a test has no fixture
 
-        tracerobot.end_test(item.rt_test_info, error_msg)
+        markers = [marker.name for marker in item.iter_markers()]
 
-    # Reporting hooks
+        if HOOK_DEBUG:
+            print("pytest_runtest_makereport", item, markers, call);
 
-    @pytest.hookimpl(hookwrapper=True)
-    def pytest_fixture_setup(self, fixturedef, request):
-        fixture = tracerobot.start_keyword(
-            name=fixturedef.argname,
-            type='setup'
-        )
+        if call.when == "setup":
+            # start test unless already started by test fixture
+            try:
+                dummy = item.rt_test_info
+            except AttributeError:
+                print(" makereport start_test")
+                item.rt_test_info = tracerobot.start_test(item.name)
 
-        outcome = yield
+            # setup phase in now finished, actual test will follow
+            tracerobot.set_test_phase("test")
 
-        # TODO: This might raise, handle it
-        result = outcome.get_result()
-        tracerobot.end_keyword(fixture, result)
+            if call.excinfo:
+                # todo: now it's not possible to see if the problem was with the
+                # setup or teardown
+                error_msg = call.excinfo.exconly()
+                tracerobot.end_test(item.rt_test_info, error_msg)
+                item.rt_test_info = None
+
+        # pytest_runtest_call(item) gets called between "setup" and "call"
+
+        elif call.when == "call":
+            if call.excinfo:
+                item.error_msg = call.excinfo.exconly()
+
+            tracerobot.set_test_phase("teardown")
+            pass
+
+        elif call.when == "teardown":
+            if item.rt_test_info:
+
+                error_msg = None
+                if item.error_msg:
+                    error_msg = item.error_msg
+                elif call.excinfo:
+                    # todo: now it's not possible to see if the problem was with the
+                    # setup or teardown
+                    error_msg = call.excinfo.exconly()
+
+                tracerobot.end_test(item.rt_test_info, error_msg)
+
 
 
 def pytest_addoption(parser):

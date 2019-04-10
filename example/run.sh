@@ -1,4 +1,4 @@
 #!/bin/bash 
 
-pytest --capture=no testgameserver.py testmath.py $@
+pytest --capture=no $@
 rebot output.xml
