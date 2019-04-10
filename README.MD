@@ -1,4 +1,4 @@
-# TraceRobot pluginfor PyTest
+# TraceRobot plugin for PyTest
 
 ## What is it?
 
