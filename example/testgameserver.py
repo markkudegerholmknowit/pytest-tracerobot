@@ -146,7 +146,19 @@ def test_valid_creds_wrong_method(gameServerFixture):
     assert not gameServerFixture.try_login(
         user="markku", passw="3l1t3", method='GET')
 
+@pytest.fixture
+def nopFixture():
+    rlog("setup")
+    yield "foo"
+    rlog("teardown")
 
+
+@pytest.mark.nop
+def test_nop(nopFixture):
+    rlog("here")
+
+
+@pytest.mark.this
 def test_lobby_register(gameLobbyFixture):
     assert gameLobbyFixture.try_register()
 
