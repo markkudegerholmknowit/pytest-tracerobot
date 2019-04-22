@@ -14,6 +14,8 @@ def common_items(iter1, iter2):
 
 class TraceRobotPlugin:
     def __init__(self, config):
+        print("__init__")
+
         self.config = config
         self._stack = []
 
@@ -33,6 +35,7 @@ class TraceRobotPlugin:
     # Initialization hooks
 
     def pytest_sessionstart(self, session):
+        print("pytest_sessionstart")
         output_path = self.config.getoption('robot_output')
         tracerobot.configure(logfile=output_path)
 
@@ -127,5 +130,6 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    print("pytest_configure")
     plugin = TraceRobotPlugin(config)
     config.pluginmanager.register(plugin)
