@@ -134,44 +134,39 @@ def gameLobbyFixture():
     login.logout()
 
 
+@pytest.mark.credentials
 def test_empty_creds(gameServerFixture):
     assert not gameServerFixture.try_login(user="", passw="")
 
 
+@pytest.mark.credentials
 def test_valid_creds(gameServerFixture):
     assert gameServerFixture.try_login(user="markku", passw="3l1t3")
 
 
+@pytest.mark.credentials
 def test_valid_creds_wrong_method(gameServerFixture):
     assert not gameServerFixture.try_login(
         user="markku", passw="3l1t3", method='GET')
 
-@pytest.fixture
-def nopFixture():
-    rlog("setup")
-    yield "foo"
-    rlog("teardown")
 
-
-@pytest.mark.nop
-def test_nop(nopFixture):
-    rlog("here")
-
-
-@pytest.mark.this
+@pytest.mark.lobby
 def test_lobby_register(gameLobbyFixture):
     assert gameLobbyFixture.try_register()
 
 
+@pytest.mark.lobby
 def test_lobby_register_bad_token(gameLobbyFixture):
     assert not gameLobbyFixture.try_register(token="12345678")
 
 
+@pytest.mark.lobby
 def test_lobby_register_twice(gameLobbyFixture):
     assert gameLobbyFixture.try_register()
     assert not gameLobbyFixture.try_register()
 
 
+@pytest.mark.lobby
 def test_lobby_register_unregister(gameLobbyFixture):
     assert gameLobbyFixture.try_register()
     assert gameLobbyFixture.try_unregister()
