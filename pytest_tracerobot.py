@@ -1,5 +1,6 @@
 import os
 import pytest
+import traceback
 import tracerobot
 
 HOOK_DEBUG=True
@@ -32,6 +33,122 @@ class TraceRobotPlugin:
     def _end_suite(self):
         _, suite = self._stack.pop(-1)
         tracerobot.end_suite(suite)
+
+    def _get_error_msg(self, call):
+        if call and call.excinfo:
+            print("error:", call.excinfo)
+            if False:
+                excinfo = traceback.format_exception(
+                    call.excinfo.type,
+                    call.excinfo.value,
+                    call.excinfo.tb,
+                    5)
+                return '\n'.join(excinfo)
+            return str(call.excinfo.getrepr(style="short"))
+
+        else:
+            return None
+
+    def _is_test_started(self, item):
+        try:
+            item.rt_test_info
+            return True
+        except AttributeError:
+            return False
+
+    def _is_test_with_setup_and_teardown(self, item):
+        try:
+            return item.rt_test_with_setup_and_teardown
+        except AttributeError:
+            return False
+
+    def _has_test_setup(self, item):
+        try:
+            item.rt_test_setup_info
+            return True
+        except AttributeError:
+            return False
+
+    def _has_test_body(self, item):
+        try:
+            item.rt_test_body_info
+            return True
+        except AttributeError:
+            return False
+
+    def _has_test_teardown(self, item):
+        try:
+            item.rt_test_teardown_info
+            return True
+        except AttributeError:
+            return False
+
+    def _start_test_envelope(self, item, with_setup_and_teardown=False):
+        """ test envelope is either
+                keyword("setup") + keyword("test body") + keyword("teardown")
+            or just
+                test body
+                """
+        if self._is_test_started(item):
+            return
+
+        markers = [marker.name for marker in item.iter_markers()]
+
+        print("start test envelope")
+        item.rt_test_info = tracerobot.start_test(
+            name=item.name,
+            tags=markers)
+        item.rt_test_with_setup_and_teardown = with_setup_and_teardown
+
+    def _start_test_setup(self, item, fixturedef):
+        assert(self._is_test_with_setup_and_teardown)
+
+        if self._has_test_setup(item):
+            self._finish_test_setup(item)
+
+        print("start test setup")
+        item.rt_test_setup_info = tracerobot.start_keyword(
+            fixturedef.argname, "setup")
+
+    def _finish_test_setup(self, item, call=None):
+        if self._has_test_setup(item):
+            error_msg = self._get_error_msg(call)
+            print("finish test setup")
+            tracerobot.end_keyword(item.rt_test_setup_info, error_msg)
+            item.rt_test_setup_info = None
+
+    def _start_test_body(self, item):
+        assert(self._is_test_with_setup_and_teardown)
+        print("start test body")
+        item.rt_test_body_info = tracerobot.start_keyword(item.name, "kw")
+
+    def _finish_test_body(self, item, call=None):
+        if self._has_test_body(item):
+            print("finish test body")
+            error_msg = self._get_error_msg(call)
+            tracerobot.end_keyword(item.rt_test_body_info, error_msg=error_msg)
+            item.rt_test_body_info = None
+
+    def _start_test_teardown(self, item):
+        assert(self._is_test_with_setup_and_teardown)
+        print("start test teardown")
+        item.rt_test_teardown_info = tracerobot.start_keyword(
+            "fixture(s)", "teardown")
+
+    def _finish_test_teardown(self, item, call=None):
+        if self._has_test_teardown(item):
+            print("finish test teardown")
+            error_msg = self._get_error_msg(call)
+            tracerobot.end_keyword(item.rt_test_teardown_info, error_msg)
+            item.rt_test_teardown_info = None
+
+    def _finish_test_envelope(self, item, call=None):
+        if self._is_test_started(item):
+            print("start test envelope")
+            error_msg = self._get_error_msg(call)
+            tracerobot.end_test(item.rt_test_info, error_msg)
+            item.rt_test_info = None
+
 
     # Initialization hooks
 
@@ -81,14 +198,10 @@ class TraceRobotPlugin:
 
         if scope == 'function':
             item = request.node
-            markers = [marker.name for marker in item.iter_markers()]
 
-            print("handle_per_function_fixture start_test")
-            test = tracerobot.start_test(
-                name=item.name,
-                tags=markers)
-            tracerobot.set_test_phase("setup")
-            item.rt_test_info = test
+            self._start_test_envelope(
+                item, with_setup_and_teardown=True)
+            self._start_test_setup(item, fixturedef)
 
             yield
         else:
@@ -96,7 +209,6 @@ class TraceRobotPlugin:
                 name=fixturedef.argname
             )
 
-            # TODO: This might raise, handle it?
             outcome = yield
 
             result = outcome.get_result()
@@ -128,51 +240,38 @@ class TraceRobotPlugin:
         #call.when: (post)"setup", (post)"call", (post)"teardown"
         #note: setup and teardown are called even if a test has no fixture
 
-        markers = [marker.name for marker in item.iter_markers()]
 
         if HOOK_DEBUG:
-            print("pytest_runtest_makereport", item, markers, call);
+            print("pytest_runtest_makereport", item, call);
 
         if call.when == "setup":
-            # start test unless already started by test fixture
-            try:
-                dummy = item.rt_test_info
-            except AttributeError:
-                print(" makereport start_test")
-                item.rt_test_info = tracerobot.start_test(item.name)
+            #  finish setup phase (if any), start test body
 
-            # setup phase in now finished, actual test will follow
-            tracerobot.set_test_phase("test")
-
-            if call.excinfo:
-                # todo: now it's not possible to see if the problem was with the
-                # setup or teardown
-                error_msg = call.excinfo.exconly()
-                tracerobot.end_test(item.rt_test_info, error_msg)
-                item.rt_test_info = None
+            if self._is_test_with_setup_and_teardown(item):
+                self._finish_test_setup(item, call)
+                if call.excinfo:
+                    # setup failed, test aborted
+                    self._finish_test_envelope(item, call)
+                else:
+                    self._start_test_body(item)
+            else:
+                self._start_test_envelope(item)
 
         # pytest_runtest_call(item) gets called between "setup" and "call"
 
         elif call.when == "call":
-            if call.excinfo:
-                item.error_msg = call.excinfo.exconly()
+            if self._is_test_with_setup_and_teardown(item):
+                self._finish_test_body(item, call)
+                self._start_test_teardown(item)
+            else:
+                self._finish_test_envelope(item, call)
 
-            tracerobot.set_test_phase("teardown")
-            pass
+            #tracerobot.set_test_phase("teardown")
 
         elif call.when == "teardown":
-            if item.rt_test_info:
-
-                error_msg = None
-                if item.error_msg:
-                    error_msg = item.error_msg
-                elif call.excinfo:
-                    # todo: now it's not possible to see if the problem was with the
-                    # setup or teardown
-                    error_msg = call.excinfo.exconly()
-
-                tracerobot.end_test(item.rt_test_info, error_msg)
-
+            if self._is_test_with_setup_and_teardown(item):
+                self._finish_test_teardown(item, call)
+                self._finish_test_envelope(item, call)
 
 
 def pytest_addoption(parser):

@@ -178,8 +178,19 @@ def nopFixture():
     yield
     rlog("teardown")
 
+@pytest.fixture
+def nopFixture2():
+    rlog("setup2")
+    yield
+    rlog("teardown2")
+
 
 @pytest.mark.nop
-def test_nop(nopFixture):
+def test_nop(nopFixture, nopFixture2):
+    rlog("nop!")
+    raise AssertionError("foo")
+
+@pytest.mark.nop
+def test_nop2():
     rlog("nop!")
     raise AssertionError("foo")
