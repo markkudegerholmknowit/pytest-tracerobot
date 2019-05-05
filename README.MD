@@ -117,13 +117,15 @@ flexible).
 
 In Robot Framework output, marks are converted to tags.
 
-## What is missing
+## Docstrings
 
-Test and keyword ....
+Python docstrings for test and keyword functions get logged within Robot log
+as documentation for those tets/keywords.
 
 ## Acknowledgements
 
-Specials thanks go to Mica Nyholm and Ossi Rajuvaara for feedback and ideas!
+Specials thanks go to Ossi Rajuvaara and Mica Nyholm for contributing,
+feedback and ideas.
 
 I'm also thankful to Robot Framework and PyTest community for producing such
 high-quality open-source products.
